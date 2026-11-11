@@ -602,6 +602,45 @@ class ParallelIPCHandler:
             return True
 
 
+_budget_stop_logged = False
+
+
+def _budget_reached(next_round: int, log_info) -> bool:
+    """
+    True once this run has spent RUN_BUDGET_ZAR minus REPORT_RESERVE_ZAR
+    (Claude only). The stop is written to the God View intervention log.
+    """
+    global _budget_stop_logged
+    from app.config import Config
+
+    run_id = os.environ.get("MIROFISH_RUN_ID")
+    if Config.LLM_PROVIDER != "anthropic" or not run_id:
+        return False
+    from app.utils.claude import run_cost
+
+    cost = run_cost(run_id)
+    limit = Config.RUN_BUDGET_ZAR - Config.REPORT_RESERVE_ZAR
+    if not cost or cost["zar"] < limit:
+        return False
+    if not _budget_stop_logged:
+        _budget_stop_logged = True
+        summary = (f"Budget reached: R{cost['zar']:.2f} spent of R{limit:.2f} "
+                   f"(R{Config.RUN_BUDGET_ZAR:.0f} budget, R{Config.REPORT_RESERVE_ZAR:.0f} kept for the report); "
+                   f"stopped before round {next_round}")
+        log_info(summary)
+        try:
+            os.makedirs("god", exist_ok=True)
+            with open(os.path.join("god", "audit.jsonl"), "a", encoding="utf-8") as handle:
+                handle.write(json.dumps({
+                    "id": f"budget{next_round}", "timestamp": datetime.now().isoformat(),
+                    "round": next_round, "command": "budget", "args": {}, "ok": True,
+                    "summary": summary, "result": cost,
+                }, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+    return True
+
+
 def load_config(config_path: str) -> Dict[str, Any]:
     """加载配置文件"""
     with open(config_path, 'r', encoding='utf-8') as f:
@@ -984,6 +1023,23 @@ def _get_comment_info(
 
 def create_model(config: Dict[str, Any], use_boost: bool = False):
     """
+    With LLM_PROVIDER=anthropic every agent runs on Claude through the
+    Anthropic SDK (app/utils/claude_camel.py); the rest of this docstring
+    describes the OpenAI-compatible setup.
+"""
+    from app.config import Config
+
+    if Config.LLM_PROVIDER == "anthropic":
+        from app.utils.claude_camel import ClaudeCamelBackend
+
+        model = ClaudeCamelBackend()
+        print(f"[Claude] model={model.model_type}, context={model.token_limit} tokens")
+        return model
+    return _create_openai_model(config, use_boost)
+
+
+def _create_openai_model(config: Dict[str, Any], use_boost: bool = False):
+    """
     创建LLM模型
     
     支持双 LLM 配置，用于并行模拟时提速：
@@ -1243,6 +1299,10 @@ async def run_twitter_simulation(
                 main_logger.info(f"收到退出信号，在第 {round_num + 1} 轮停止模拟")
             break
         
+        # Cost control: stop once the run has spent its budget.
+        if _budget_reached(round_num + 1, log_info):
+            break
+
         # God View: serve operator commands and hold here while paused.
         if god:
             await god.checkpoint("twitter", round_num + 1)
@@ -1460,6 +1520,10 @@ async def run_reddit_simulation(
                 main_logger.info(f"收到退出信号，在第 {round_num + 1} 轮停止模拟")
             break
         
+        # Cost control: stop once the run has spent its budget.
+        if _budget_reached(round_num + 1, log_info):
+            break
+
         # God View: serve operator commands and hold here while paused.
         if god:
             await god.checkpoint("reddit", round_num + 1)

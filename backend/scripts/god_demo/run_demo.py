@@ -101,9 +101,10 @@ def main():
     env = os.environ.copy()
     env["NO_PROXY"] = env["no_proxy"] = "127.0.0.1,localhost"
     env_path, env_file = read_env_file()
-    key = env_file.get("LLM_API_KEY", "")
+    provider = env_file.get("LLM_PROVIDER", "openai").lower()
+    key = env_file.get("ANTHROPIC_API_KEY" if provider == "anthropic" else "LLM_API_KEY", "")
     if env_file and (not key or key.startswith("your_")):
-        sys.exit(f"{env_path} exists but has no real LLM_API_KEY. Either fill it in (the demo then uses "
+        sys.exit(f"{env_path} exists but has no real API key. Either fill it in (the demo then uses "
                  "that LLM) or delete/rename it to run the demo with the built-in stand-in.")
 
     if key:
@@ -114,9 +115,10 @@ def main():
         import stub_llm
         stub_llm.serve(STUB_PORT)
         env.update({
-            "LLM_API_KEY": "demo-key",
-            "LLM_BASE_URL": f"http://127.0.0.1:{STUB_PORT}/v1",
-            "LLM_MODEL_NAME": "gpt-4o-mini",
+            # The demo runs MiroFish's Claude code path against the stand-in.
+            "LLM_PROVIDER": "anthropic",
+            "ANTHROPIC_API_KEY": "demo-key",
+            "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{STUB_PORT}",
             # Only needed by the graph panel and reports, which the demo cannot use.
             "ZEP_API_KEY": "demo-key",
         })

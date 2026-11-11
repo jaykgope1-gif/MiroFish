@@ -32,6 +32,7 @@ from ..config import Config
 from ..services import god_branches, god_control
 from ..services.god_control import GodUnavailable
 from ..services.simulation_runner import SimulationRunner
+from ..utils.claude import run_cost
 from ..utils.logger import get_logger
 
 logger = get_logger('mirofish.api.god')
@@ -156,6 +157,8 @@ def _status_snapshot(simulation_id: str) -> dict:
         status = run_state.to_dict()
     status["env_alive"] = SimulationRunner.check_env_alive(simulation_id)
     status["god"] = god_control.get_state(simulation_id)
+    # LLM spend so far (Claude runs only): {usd, zar, budget_zar, calls, by_component}
+    status["cost"] = run_cost(simulation_id)
     return status
 
 

@@ -1,5 +1,7 @@
 """
-Demo-only stand-in for an OpenAI-compatible chat API.
+Demo-only stand-in for the LLM: answers both the Anthropic Messages API
+(/v1/messages, used with LLM_PROVIDER=anthropic) and OpenAI Chat
+Completions (/v1/chat/completions).
 
 It lets the God View demo run with no API key. It does not think: every
 request gets one tool call picked at random from the tools the request
@@ -77,39 +79,47 @@ def _arguments(schema, stance, context):
     return args
 
 
-def _reply(body, delay):
-    messages = body.get("messages", [])
-    tools = [t["function"] for t in body.get("tools", []) if t.get("type") == "function"]
-    stance = _stance(messages)
-    context = " ".join(str(m.get("content", "")) for m in messages[-2:])
+def _decide(system_text, context, tools, delay):
+    """Pick one tool call or a text reply. tools: [(name, json schema)]."""
+    stance = _stance([{"role": "system", "content": system_text}])
     time.sleep(random.uniform(*delay))
+    usable = [(name, schema) for name, schema in tools if name in WEIGHTS]
+    if usable and NO_TOOLS_MARKER not in context:
+        name, schema = random.choices(usable, weights=[WEIGHTS[n] for n, _ in usable])[0]
+        return "tool", name, _arguments(schema, stance, context)
+    poll = POLL_PATTERN.search(context)
+    if poll:
+        options = [o.strip() for o in poll.group(1).split("/")]
+        # Mostly answer by stance (first option if opposing, second if
+        # supportive, last otherwise), sometimes at random.
+        pick = {"opposing": 0, "supportive": 1}.get(stance, len(options) - 1)
+        if random.random() < 0.15:
+            pick = random.randrange(len(options))
+        answer = options[min(pick, len(options) - 1)].capitalize()
+        return "text", f"{answer}. [demo reply, stance={stance}] {_sentence(stance)}", None
+    return "text", f"[demo reply, stance={stance}] {_sentence(stance)}", None
+
+
+def _reply(body, delay):
+    """OpenAI Chat Completions format (/v1/chat/completions)."""
+    messages = body.get("messages", [])
+    system_text = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
+    context = " ".join(str(m.get("content", "")) for m in messages[-2:])
+    tools = [(t["function"]["name"], t["function"].get("parameters"))
+             for t in body.get("tools", []) if t.get("type") == "function"]
+    kind, value, args = _decide(system_text, context, tools, delay)
 
     message = {"role": "assistant", "content": None}
-    usable = [t for t in tools if t["name"] in WEIGHTS]
-    if usable and NO_TOOLS_MARKER not in context:
-        tool = random.choices(usable, weights=[WEIGHTS[t["name"]] for t in usable])[0]
+    if kind == "tool":
         message["tool_calls"] = [{
             "id": "call_" + uuid.uuid4().hex[:12],
             "type": "function",
-            "function": {"name": tool["name"],
-                         "arguments": json.dumps(_arguments(tool.get("parameters"), stance, context))},
+            "function": {"name": value, "arguments": json.dumps(args)},
         }]
         finish = "tool_calls"
     else:
-        poll = POLL_PATTERN.search(context)
-        if poll:
-            options = [o.strip() for o in poll.group(1).split("/")]
-            # Mostly answer by stance (first option if opposing, second if
-            # supportive, last otherwise), sometimes at random.
-            pick = {"opposing": 0, "supportive": 1}.get(stance, len(options) - 1)
-            if random.random() < 0.15:
-                pick = random.randrange(len(options))
-            answer = options[min(pick, len(options) - 1)].capitalize()
-            message["content"] = f"{answer}. [demo reply, stance={stance}] {_sentence(stance)}"
-        else:
-            message["content"] = f"[demo reply, stance={stance}] {_sentence(stance)}"
+        message["content"] = value
         finish = "stop"
-
     return {
         "id": "chatcmpl-" + uuid.uuid4().hex,
         "object": "chat.completion",
@@ -117,6 +127,56 @@ def _reply(body, delay):
         "model": body.get("model", "demo"),
         "choices": [{"index": 0, "message": message, "finish_reason": finish}],
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+
+def _block_text(content):
+    if isinstance(content, str):
+        return content
+    parts = []
+    for block in content or []:
+        if block.get("type") == "text":
+            parts.append(block.get("text", ""))
+        elif block.get("type") == "tool_result":
+            parts.append(_block_text(block.get("content")))
+    return " ".join(parts)
+
+
+def _reply_messages(body, delay):
+    """
+    Anthropic Messages format (/v1/messages), as sent by the Anthropic SDK.
+
+    Token counts are estimated from the request size (about 4 characters per
+    token), so the demo's cost figures show roughly what a real run of the
+    same size would be billed.
+    """
+    system = body.get("system") or ""
+    system_text = system if isinstance(system, str) else _block_text(system)
+    messages = body.get("messages", [])
+    context = " ".join(_block_text(m.get("content")) for m in messages[-2:])
+    tools = [(t["name"], t.get("input_schema")) for t in body.get("tools", []) if "name" in t]
+    kind, value, args = _decide(system_text, context, tools, delay)
+
+    if kind == "tool":
+        content = [{"type": "tool_use", "id": "toolu_" + uuid.uuid4().hex[:20], "name": value, "input": args}]
+        stop = "tool_use"
+    else:
+        content = [{"type": "text", "text": value}]
+        stop = "end_turn"
+    return {
+        "id": "msg_" + uuid.uuid4().hex[:24],
+        "type": "message",
+        "role": "assistant",
+        "model": body.get("model", "demo"),
+        "content": content,
+        "stop_reason": stop,
+        "stop_sequence": None,
+        "usage": {
+            "input_tokens": max(1, len(json.dumps(body)) // 4),
+            "output_tokens": max(1, len(json.dumps(content)) // 4),
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+        },
     }
 
 
@@ -133,7 +193,10 @@ def serve(port, delay=(0.4, 1.0)):
                 body = json.loads(self.rfile.read(length) or b"{}")
             except json.JSONDecodeError:
                 body = {}
-            data = json.dumps(_reply(body, delay)).encode()
+            if self.path.startswith("/v1/messages"):
+                data = json.dumps(_reply_messages(body, delay)).encode()
+            else:
+                data = json.dumps(_reply(body, delay)).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))

@@ -218,3 +218,15 @@ npm run demo
 In the terminal, press `:` to type a command and `?` for every key and command. Commands: `pause`, `resume`, `step`, `inject <news>`, `whisper <agent> <text>`, `interview <agent> <question>`, `poll <question>`, `fork <name>`, `diff <branch> <branch>`, `report`. Every intervention is written to an audit log and marked on the timeline.
 
 The graph panel and `report` need a Zep key, so they do not work in the keyless demo.
+
+## Running on Claude
+
+Set `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` in `.env` (see `.env.example`). Every LLM call then goes through the Anthropic SDK (`backend/app/utils/claude.py`), routed by job:
+
+| Job | Model (default) |
+|---|---|
+| Ontology, report agent, graph search | `claude-sonnet-5-5` (`CLAUDE_REPORT_MODEL`) |
+| Agent profiles, simulation config | `claude-haiku-5-5` (`CLAUDE_FAST_MODEL`) |
+| Every OASIS agent action and interview | `claude-haiku-5-5` (`CLAUDE_SIMULATION_MODEL`) |
+
+Every call is costed in `<simulation>/llm_usage.jsonl`; the God View status line shows the run's spend. A simulation stops early once preparation and simulation reach `RUN_BUDGET_ZAR - REPORT_RESERVE_ZAR` (default R50 - R12), so the report still fits. Knowledge-graph extraction is done by Zep Cloud with its own model and is not routed through Claude.
