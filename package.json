@@ -10,7 +10,8 @@
     "backend": "cd backend && uv run python run.py",
     "frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
-    "demo": "cd backend && uv run python scripts/god_demo/run_demo.py"
+    "demo": "cd backend && uv run python scripts/god_demo/run_demo.py",
+    "check": "cd backend && uv run python scripts/check_setup.py"
   },
   "devDependencies": {
     "concurrently": "^9.2.4"
