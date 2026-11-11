@@ -463,14 +463,18 @@ class SimulationRunner:
             cls._graph_memory_enabled[simulation_id] = False
         
         # 确定运行哪个脚本（脚本位于 backend/scripts/ 目录）
+        # Single-platform runs also use the parallel script (with its
+        # --twitter-only / --reddit-only flag): it is the only script that
+        # writes <platform>/actions.jsonl, which run monitoring reads.
+        script_name = "run_parallel_simulation.py"
+        platform_args = []
         if platform == "twitter":
-            script_name = "run_twitter_simulation.py"
+            platform_args = ["--twitter-only"]
             state.twitter_running = True
         elif platform == "reddit":
-            script_name = "run_reddit_simulation.py"
+            platform_args = ["--reddit-only"]
             state.reddit_running = True
         else:
-            script_name = "run_parallel_simulation.py"
             state.twitter_running = True
             state.reddit_running = True
         
@@ -521,6 +525,7 @@ class SimulationRunner:
             ]
             
             # 如果指定了最大轮数，添加到命令行参数
+            cmd.extend(platform_args)
             if max_rounds is not None and max_rounds > 0:
                 cmd.extend(["--max-rounds", str(max_rounds)])
             

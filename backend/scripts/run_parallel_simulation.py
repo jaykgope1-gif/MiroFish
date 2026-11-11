@@ -156,6 +156,7 @@ def init_logging_for_simulation(simulation_dir: str):
 
 
 from action_logger import SimulationLogManager, PlatformActionLogger
+from god_control import GodControl
 
 try:
     from camel.models import ModelFactory
@@ -608,7 +609,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
 
 # 需要过滤掉的非核心动作类型（这些动作对分析价值较低）
-FILTERED_ACTIONS = {'refresh', 'sign_up'}
+FILTERED_ACTIONS = {'refresh', 'sign_up', 'interview'}
 
 # 动作类型映射表（数据库中的名称 -> 标准名称）
 ACTION_TYPE_MAP = {
@@ -1103,7 +1104,8 @@ async def run_twitter_simulation(
     simulation_dir: str,
     action_logger: Optional[PlatformActionLogger] = None,
     main_logger: Optional[SimulationLogManager] = None,
-    max_rounds: Optional[int] = None
+    max_rounds: Optional[int] = None,
+    god: Optional[GodControl] = None
 ) -> PlatformSimulation:
     """运行Twitter模拟
     
@@ -1151,6 +1153,11 @@ async def run_twitter_simulation(
     db_path = os.path.join(simulation_dir, "twitter_simulation.db")
     if os.path.exists(db_path):
         os.remove(db_path)
+    # God View: a forked run continues from its parent's snapshot.
+    resume = god.resume_point("twitter") if god else None
+    if resume:
+        god.restore_files("twitter", db_path)
+        log_info(f"从分支快照恢复，继续第 {resume['round']} 轮")
     
     result.env = oasis.make(
         agent_graph=result.agent_graph,
@@ -1160,20 +1167,24 @@ async def run_twitter_simulation(
     )
     
     await result.env.reset()
+    if god:
+        god.register("twitter", result.env, result.agent_graph)
     log_info("环境已启动")
     
-    if action_logger:
+    if action_logger and not resume:
         action_logger.log_simulation_start(config)
     
     total_actions = 0
     last_rowid = 0  # 跟踪数据库中最后处理的行号（使用 rowid 避免 created_at 格式差异）
+    if resume:
+        last_rowid = god.restore_runtime("twitter", db_path)
     
     # 执行初始事件
     event_config = config.get("event_config", {})
-    initial_posts = event_config.get("initial_posts", [])
+    initial_posts = [] if resume else event_config.get("initial_posts", [])
     
     # 记录 round 0 开始（初始事件阶段）
-    if action_logger:
+    if action_logger and not resume:
         action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
     
     initial_action_count = 0
@@ -1207,7 +1218,7 @@ async def run_twitter_simulation(
             log_info(f"已发布 {len(initial_actions)} 条初始帖子")
     
     # 记录 round 0 结束
-    if action_logger:
+    if action_logger and not resume:
         action_logger.log_round_end(0, initial_action_count)
     
     # 主模拟循环
@@ -1225,12 +1236,18 @@ async def run_twitter_simulation(
     
     start_time = datetime.now()
     
-    for round_num in range(total_rounds):
+    for round_num in range(resume["round"] - 1 if resume else 0, total_rounds):
         # 检查是否收到退出信号
         if _shutdown_event and _shutdown_event.is_set():
             if main_logger:
                 main_logger.info(f"收到退出信号，在第 {round_num + 1} 轮停止模拟")
             break
+        
+        # God View: serve operator commands and hold here while paused.
+        if god:
+            await god.checkpoint("twitter", round_num + 1)
+            if _shutdown_event and _shutdown_event.is_set():
+                break
         
         simulated_minutes = round_num * minutes_per_round
         simulated_hour = (simulated_minutes // 60) % 24
@@ -1282,6 +1299,8 @@ async def run_twitter_simulation(
     
     if action_logger:
         action_logger.log_simulation_end(total_rounds, total_actions)
+    if god:
+        god.finish("twitter")
     
     result.total_actions = total_actions
     elapsed = (datetime.now() - start_time).total_seconds()
@@ -1295,7 +1314,8 @@ async def run_reddit_simulation(
     simulation_dir: str,
     action_logger: Optional[PlatformActionLogger] = None,
     main_logger: Optional[SimulationLogManager] = None,
-    max_rounds: Optional[int] = None
+    max_rounds: Optional[int] = None,
+    god: Optional[GodControl] = None
 ) -> PlatformSimulation:
     """运行Reddit模拟
     
@@ -1342,6 +1362,11 @@ async def run_reddit_simulation(
     db_path = os.path.join(simulation_dir, "reddit_simulation.db")
     if os.path.exists(db_path):
         os.remove(db_path)
+    # God View: a forked run continues from its parent's snapshot.
+    resume = god.resume_point("reddit") if god else None
+    if resume:
+        god.restore_files("reddit", db_path)
+        log_info(f"从分支快照恢复，继续第 {resume['round']} 轮")
     
     result.env = oasis.make(
         agent_graph=result.agent_graph,
@@ -1351,20 +1376,24 @@ async def run_reddit_simulation(
     )
     
     await result.env.reset()
+    if god:
+        god.register("reddit", result.env, result.agent_graph)
     log_info("环境已启动")
     
-    if action_logger:
+    if action_logger and not resume:
         action_logger.log_simulation_start(config)
     
     total_actions = 0
     last_rowid = 0  # 跟踪数据库中最后处理的行号（使用 rowid 避免 created_at 格式差异）
+    if resume:
+        last_rowid = god.restore_runtime("reddit", db_path)
     
     # 执行初始事件
     event_config = config.get("event_config", {})
-    initial_posts = event_config.get("initial_posts", [])
+    initial_posts = [] if resume else event_config.get("initial_posts", [])
     
     # 记录 round 0 开始（初始事件阶段）
-    if action_logger:
+    if action_logger and not resume:
         action_logger.log_round_start(0, 0)  # round 0, simulated_hour 0
     
     initial_action_count = 0
@@ -1406,7 +1435,7 @@ async def run_reddit_simulation(
             log_info(f"已发布 {len(initial_actions)} 条初始帖子")
     
     # 记录 round 0 结束
-    if action_logger:
+    if action_logger and not resume:
         action_logger.log_round_end(0, initial_action_count)
     
     # 主模拟循环
@@ -1424,12 +1453,18 @@ async def run_reddit_simulation(
     
     start_time = datetime.now()
     
-    for round_num in range(total_rounds):
+    for round_num in range(resume["round"] - 1 if resume else 0, total_rounds):
         # 检查是否收到退出信号
         if _shutdown_event and _shutdown_event.is_set():
             if main_logger:
                 main_logger.info(f"收到退出信号，在第 {round_num + 1} 轮停止模拟")
             break
+        
+        # God View: serve operator commands and hold here while paused.
+        if god:
+            await god.checkpoint("reddit", round_num + 1)
+            if _shutdown_event and _shutdown_event.is_set():
+                break
         
         simulated_minutes = round_num * minutes_per_round
         simulated_hour = (simulated_minutes // 60) % 24
@@ -1481,6 +1516,8 @@ async def run_reddit_simulation(
     
     if action_logger:
         action_logger.log_simulation_end(total_rounds, total_actions)
+    if god:
+        god.finish("reddit")
     
     result.total_actions = total_actions
     elapsed = (datetime.now() - start_time).total_seconds()
@@ -1539,6 +1576,7 @@ async def main():
     
     # 创建日志管理器
     log_manager = SimulationLogManager(simulation_dir)
+    god = GodControl(simulation_dir, _shutdown_event)
     twitter_logger = log_manager.get_twitter_logger()
     reddit_logger = log_manager.get_reddit_logger()
     
@@ -1577,14 +1615,14 @@ async def main():
     reddit_result: Optional[PlatformSimulation] = None
     
     if args.twitter_only:
-        twitter_result = await run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds)
+        twitter_result = await run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds, god)
     elif args.reddit_only:
-        reddit_result = await run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds)
+        reddit_result = await run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds, god)
     else:
         # 并行运行（每个平台使用独立的日志记录器）
         results = await asyncio.gather(
-            run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds),
-            run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds),
+            run_twitter_simulation(config, simulation_dir, twitter_logger, log_manager, args.max_rounds, god),
+            run_reddit_simulation(config, simulation_dir, reddit_logger, log_manager, args.max_rounds, god),
         )
         twitter_result, reddit_result = results
     
@@ -1613,6 +1651,7 @@ async def main():
         # 等待命令循环（使用全局 _shutdown_event）
         try:
             while not _shutdown_event.is_set():
+                await god.serve()
                 should_continue = await ipc_handler.process_commands()
                 if not should_continue:
                     break
