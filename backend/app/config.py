@@ -24,10 +24,56 @@ class Config:
     # JSON配置 - 禁用ASCII转义，让中文直接显示
     JSON_AS_ASCII = False
     
-    # LLM配置（统一使用OpenAI格式）
+    # LLM provider: "anthropic" (Claude, through the Anthropic SDK) or
+    # "openai" (any OpenAI-compatible API, the original MiroFish setup).
+    LLM_PROVIDER = os.environ.get('LLM_PROVIDER', 'openai').strip().lower()
+
+    # LLM配置（统一使用OpenAI格式）- used when LLM_PROVIDER=openai
     LLM_API_KEY = os.environ.get('LLM_API_KEY')
     LLM_BASE_URL = os.environ.get('LLM_BASE_URL', 'https://api.openai.com/v1')
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME', 'gpt-4o-mini')
+
+    # Claude - used when LLM_PROVIDER=anthropic. See app/utils/claude.py.
+    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
+    CLAUDE_MODELS = {
+        # ontology, report agent, graph search: executive-level synthesis
+        'report': os.environ.get('CLAUDE_REPORT_MODEL', 'claude-sonnet-5-5'),
+        # agent profiles and simulation config: many small structured calls
+        'fast': os.environ.get('CLAUDE_FAST_MODEL', 'claude-haiku-5-5'),
+        # every OASIS agent action and interview
+        'simulation': os.environ.get('CLAUDE_SIMULATION_MODEL', 'claude-haiku-5-5'),
+    }
+    # Effort per tier (low / medium / high / xhigh / max; empty = model default).
+    CLAUDE_EFFORT = {
+        'report': os.environ.get('CLAUDE_REPORT_EFFORT', 'high'),
+        'fast': os.environ.get('CLAUDE_FAST_EFFORT', 'low'),
+        'simulation': os.environ.get('CLAUDE_SIMULATION_EFFORT', 'low'),
+    }
+    # Swarm agents act on a short context, so thinking is off by default to
+    # keep runs cheap ("adaptive" turns it on). Thinking cannot be turned off
+    # on the report model (Sonnet 5.5), only lowered with effort.
+    CLAUDE_SIMULATION_THINKING = os.environ.get('CLAUDE_SIMULATION_THINKING', 'disabled')
+    # Tokens of history an OASIS agent sees per call; the main cost lever of a run.
+    CLAUDE_SIMULATION_CONTEXT_TOKENS = int(os.environ.get('CLAUDE_SIMULATION_CONTEXT_TOKENS', '24000'))
+
+    # Cost control. A simulation stops early once the run (preparation +
+    # simulation) reaches RUN_BUDGET_ZAR minus REPORT_RESERVE_ZAR, so the
+    # report still fits in the budget. Set USD_ZAR_RATE to today's rate.
+    RUN_BUDGET_ZAR = float(os.environ.get('RUN_BUDGET_ZAR', '50'))
+    REPORT_RESERVE_ZAR = float(os.environ.get('REPORT_RESERVE_ZAR', '12'))
+    USD_ZAR_RATE = float(os.environ.get('USD_ZAR_RATE', '18.5'))
+
+    @classmethod
+    def claude_model(cls, tier: str) -> str:
+        return cls.CLAUDE_MODELS.get(tier) or cls.CLAUDE_MODELS['report']
+
+    @classmethod
+    def claude_effort(cls, tier: str) -> str:
+        return (cls.CLAUDE_EFFORT.get(tier) or '').strip().lower()
+
+    @classmethod
+    def claude_thinking(cls, tier: str) -> str:
+        return cls.CLAUDE_SIMULATION_THINKING.strip().lower() if tier == 'simulation' else 'adaptive'
     
     # Zep配置
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
@@ -64,7 +110,12 @@ class Config:
     def validate(cls) -> list[str]:
         """验证必要配置"""
         errors: list[str] = []
-        if not cls.LLM_API_KEY:
+        if cls.LLM_PROVIDER == "anthropic":
+            if not cls.ANTHROPIC_API_KEY:
+                errors.append("ANTHROPIC_API_KEY is not set (LLM_PROVIDER=anthropic)")
+        elif cls.LLM_PROVIDER != "openai":
+            errors.append(f"LLM_PROVIDER must be 'anthropic' or 'openai', not '{cls.LLM_PROVIDER}'")
+        elif not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
         if not cls.ZEP_API_KEY:
             errors.append("ZEP_API_KEY 未配置")

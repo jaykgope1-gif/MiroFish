@@ -538,6 +538,9 @@ class SimulationRunner:
             env = os.environ.copy()
             env['PYTHONUTF8'] = '1'  # Python 3.7+ 支持，让所有 open() 默认使用 UTF-8
             env['PYTHONIOENCODING'] = 'utf-8'  # 确保 stdout/stderr 使用 UTF-8
+            # Charge this process's LLM calls to the run (app/utils/claude.py).
+            env['MIROFISH_RUN_ID'] = simulation_id
+            env['MIROFISH_RUN_COMPONENT'] = 'simulation'
             
             # 设置工作目录为模拟目录（数据库等文件会生成在此）
             # 使用 start_new_session=True 创建新的进程组，确保可以通过 os.killpg 终止所有子进程
@@ -1408,6 +1411,10 @@ class SimulationRunner:
             "twitter_simulation.db",  # Twitter 平台数据库
             "reddit_simulation.db",   # Reddit 平台数据库
             "env_status.json",        # 环境状态文件
+            # Spend of the previous simulation run (app/utils/claude.py), so the
+            # new run's budget starts fresh. Preparation spend (llm_cost.backend.json)
+            # and the per-call log (llm_usage.jsonl) are kept.
+            "llm_cost.simulation.json",
         ]
         
         # 要删除的目录列表（包含动作日志）

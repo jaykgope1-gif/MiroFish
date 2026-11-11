@@ -19,6 +19,14 @@
           <span class="k k2">RD</span>{{ state.status?.reddit_current_round ?? '—' }}
         </span>
         <span class="cell"><span class="k">{{ $t('god.status.actions') }}</span>{{ scopedEvents.length }}</span>
+        <span
+          v-if="state.status?.cost"
+          class="cell"
+          :class="{ 'cost-high': state.status.cost.zar >= state.status.cost.budget_zar * 0.8 }"
+          :title="$t('god.status.costHint', { usd: state.status.cost.usd.toFixed(3), calls: state.status.cost.calls })"
+        >
+          <span class="k">{{ $t('god.status.cost') }}</span>R{{ state.status.cost.zar.toFixed(2) }}<span class="k">/R{{ state.status.cost.budget_zar.toFixed(0) }}</span>
+        </span>
         <span v-if="state.focus" class="cell focus">
           <span class="k">{{ $t('god.status.focus') }}</span>{{ state.focus.label }}
           <button class="g-link" :aria-label="$t('god.status.clearFocus')" @click="setFocus(null)">✕</button>
@@ -390,6 +398,7 @@ watch(simulationId, id => { if (id) nextTick(() => focusPanel('feed')) })
 .conn-reconnecting, .conn-notfound { color: var(--g-crit); }
 .conn-reconnecting .lamp, .conn-notfound .lamp { background: var(--g-crit); }
 .focus { color: var(--g-warn); }
+.cost-high { color: var(--g-warn); }
 .banner { flex: none; padding: 4px 8px; display: flex; gap: 12px; align-items: center; }
 .banner.crit { background: var(--g-crit); color: #fff; }
 .banner.crit .g-link { color: #fff; }

@@ -201,3 +201,20 @@ MiroFish 的仿真引擎由 **[OASIS](https://github.com/camel-ai/oasis)** 驱�
    <img alt="666ghj/MiroFish Star History Chart" src="static/image/star-history-light.svg" />
  </picture>
 </a>
+
+## 上帝视角终端（God View）
+
+用于实时观察并干预正在运行的模拟的键盘操作控制台：在前端打开 `/god/<simulation_id>`（或打开 `/god` 选择模拟）。
+
+**无需 API Key 即可试用：**
+
+```bash
+npm run setup:all
+npm run demo
+```
+
+`npm run demo` 会生成一个小型虚构模拟，启动后端与前端，在双平台上开始模拟并打开 `http://localhost:3000/god/sim_god_demo`。没有 `.env` 时，Agent 由内置的替身驱动，只输出预设句子（不是真实 LLM）；若 `.env` 中有真实的 `LLM_API_KEY`，则使用该 LLM。首次运行会从 Hugging Face 下载 Twitter 推荐模型（约 1 GB）。按 Ctrl+C 停止全部进程。
+
+在终端中按 `:` 输入命令，按 `?` 查看全部按键与命令。命令：`pause`、`resume`、`step`、`inject <消息>`、`whisper <agent> <内容>`、`interview <agent> <问题>`、`poll <问题>`、`fork <名称>`、`diff <分支> <分支>`、`report`。每次干预都会写入审计日志并在时间线上标记。
+
+图谱面板和 `report` 需要 Zep Key，无 Key 演示中无法使用。

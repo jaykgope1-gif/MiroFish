@@ -35,6 +35,17 @@ def create_chat_completion(
     - Preserve the legacy request shape for every non-GPT-5 model/provider.
     - Propagate provider errors unchanged instead of guessing from message text.
     """
+    # Claude: sent through the Anthropic SDK (app/utils/claude.py). The model
+    # comes from the client's tier and sampling parameters are not sent.
+    from .claude import ClaudeChat
+
+    if isinstance(client, ClaudeChat):
+        return client.chat_completion(
+            messages,
+            max_tokens=max_tokens,
+            json_mode=response_format is not None,
+        )
+
     kwargs: Dict[str, Any] = {
         "model": model,
         "messages": messages,

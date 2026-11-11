@@ -11,6 +11,7 @@ from openai import OpenAI
 
 from ..config import Config
 from .openai_chat_compat import create_chat_completion, extract_chat_completion_text
+from .claude import ClaudeChat
 
 
 logger = logging.getLogger(__name__)
@@ -95,8 +96,20 @@ class LLMClient:
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        tier: str = "report",
+        run: Optional[str] = None,
     ):
+        """
+        tier: which Claude model to use when LLM_PROVIDER=anthropic
+              ("report" = Sonnet, "fast" = Haiku; see app/utils/claude.py).
+        run:  simulation id the calls are charged to in the cost ledger.
+        """
+        if Config.LLM_PROVIDER == "anthropic" and not (api_key or base_url):
+            self.client = ClaudeChat(tier, run=run)
+            self.model = self.client.model
+            return
+
         self.api_key = api_key or Config.LLM_API_KEY
         self.base_url = base_url or Config.LLM_BASE_URL
         self.model = model or Config.LLM_MODEL_NAME

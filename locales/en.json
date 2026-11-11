@@ -681,7 +681,9 @@
       "clearFocus": "Clear focus",
       "keys": "keys",
       "branch": "branch",
-      "language": "Switch language"
+      "language": "Switch language",
+      "cost": "cost",
+      "costHint": "LLM spend on this run so far: ${usd} over {calls} calls"
     },
     "conn": {
       "idle": "idle",
