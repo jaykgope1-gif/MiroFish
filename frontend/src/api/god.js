@@ -6,7 +6,8 @@ import service from './index'
  * @param {string} [cursor] - resume position from the last received event id
  */
 export const godStreamUrl = (simulationId, cursor) => {
-  const base = service.defaults.baseURL || ''
+  // No trailing slash, so a base of "/" (same origin behind a proxy) works.
+  const base = (service.defaults.baseURL || '').replace(/\/+$/, '')
   const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
   return `${base}/api/god/${encodeURIComponent(simulationId)}/stream${query}`
 }

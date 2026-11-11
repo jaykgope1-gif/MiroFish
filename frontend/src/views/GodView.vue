@@ -25,6 +25,7 @@
         </span>
       </template>
       <span class="gp-spacer"></span>
+      <button class="g-link" :aria-label="$t('god.status.language')" @click="nextLocale">{{ locale.toUpperCase() }}</button>
       <button class="g-link" @click="helpOpen = true">? {{ $t('god.status.keys') }}</button>
     </header>
 
@@ -117,6 +118,8 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { availableLocales } from '../i18n'
 import GodFeed from '../components/god/GodFeed.vue'
 import GodRoster from '../components/god/GodRoster.vue'
 import GodAgentDetail from '../components/god/GodAgentDetail.vue'
@@ -134,6 +137,16 @@ import {
 } from '../store/godTerminal'
 
 const route = useRoute()
+const { locale } = useI18n()
+
+// Same persistence as LanguageSwitcher, as a single button that fits the status line.
+function nextLocale() {
+  const keys = availableLocales.map(l => l.key)
+  const next = keys[(keys.indexOf(locale.value) + 1) % keys.length]
+  locale.value = next
+  localStorage.setItem('locale', next)
+  document.documentElement.lang = next
+}
 const router = useRouter()
 
 const simulationId = computed(() => route.params.simulationId || '')

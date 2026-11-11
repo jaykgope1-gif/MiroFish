@@ -680,7 +680,8 @@
       "focus": "聚焦",
       "clearFocus": "清除聚焦",
       "keys": "按键",
-      "branch": "分支"
+      "branch": "分支",
+      "language": "切换语言"
     },
     "conn": {
       "idle": "空闲",

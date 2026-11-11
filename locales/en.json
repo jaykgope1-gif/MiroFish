@@ -680,7 +680,8 @@
       "focus": "focus",
       "clearFocus": "Clear focus",
       "keys": "keys",
-      "branch": "branch"
+      "branch": "branch",
+      "language": "Switch language"
     },
     "conn": {
       "idle": "idle",
