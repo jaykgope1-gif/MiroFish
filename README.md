@@ -201,3 +201,20 @@ MiroFish's simulation engine is powered by **[OASIS (Open Agent Social Interacti
    <img alt="666ghj/MiroFish Star History Chart" src="static/image/star-history-light.svg" />
  </picture>
 </a>
+
+## God View Terminal
+
+A keyboard-driven operator console for watching a running simulation and intervening in it: open `/god/<simulation_id>` in the frontend (or `/god` to pick a simulation).
+
+**Try it with no API keys:**
+
+```bash
+npm run setup:all
+npm run demo
+```
+
+`npm run demo` writes a small fictional simulation, starts the backend and frontend, starts the simulation on both platforms and opens `http://localhost:3000/god/sim_god_demo`. With no `.env`, agents are driven by a built-in stand-in that writes canned sentences (no real LLM). With a `.env` holding a real `LLM_API_KEY`, that LLM is used instead. The first run downloads the Twitter recommender model from Hugging Face (about 1 GB). Ctrl+C stops everything.
+
+In the terminal, press `:` to type a command and `?` for every key and command. Commands: `pause`, `resume`, `step`, `inject <news>`, `whisper <agent> <text>`, `interview <agent> <question>`, `poll <question>`, `fork <name>`, `diff <branch> <branch>`, `report`. Every intervention is written to an audit log and marked on the timeline.
+
+The graph panel and `report` need a Zep key, so they do not work in the keyless demo.
