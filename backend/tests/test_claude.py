@@ -161,3 +161,18 @@ def test_camel_backend_returns_tool_calls_as_chat_completion(monkeypatch):
     assert choice.message.tool_calls[0].function.name == "like_post"
     assert json.loads(choice.message.tool_calls[0].function.arguments) == {"post_id": 7}
     assert backend.token_limit == 8000
+
+
+def test_restart_cleanup_resets_simulation_spend_but_keeps_preparation(isolated_ledger, monkeypatch):
+    from app.services.simulation_runner import SimulationRunner
+
+    sim = isolated_ledger / "sim_r"
+    sim.mkdir()
+    for component, usd in (("simulation", 1.0), ("backend", 0.5)):
+        (sim / f"llm_cost.{component}.json").write_text(json.dumps(
+            {"run": "sim_r", "component": component, "usd": usd, "calls": 1, "usd_zar_rate": 20.0}))
+    monkeypatch.setattr(SimulationRunner, "RUN_STATE_DIR", str(isolated_ledger))
+
+    SimulationRunner.cleanup_simulation_logs("sim_r")
+
+    assert claude.run_cost("sim_r")["by_component"] == {"backend": 10.0}

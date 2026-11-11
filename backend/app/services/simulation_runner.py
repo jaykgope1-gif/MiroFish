@@ -1411,6 +1411,10 @@ class SimulationRunner:
             "twitter_simulation.db",  # Twitter 平台数据库
             "reddit_simulation.db",   # Reddit 平台数据库
             "env_status.json",        # 环境状态文件
+            # Spend of the previous simulation run (app/utils/claude.py), so the
+            # new run's budget starts fresh. Preparation spend (llm_cost.backend.json)
+            # and the per-call log (llm_usage.jsonl) are kept.
+            "llm_cost.simulation.json",
         ]
         
         # 要删除的目录列表（包含动作日志）
