@@ -30,7 +30,8 @@ def report(status, message, fix=None):
 
 
 def placeholder(value):
-    return not value or value.startswith("your_") or value in ("demo-key", "sk-ant-...")
+    return (not value or value.startswith("your_") or value in ("demo-key", "sk-ant-...", "gsk_...", "zpk_...")
+            or value.startswith(("not-", "proxy-injected")))
 
 
 def main():
@@ -38,14 +39,18 @@ def main():
 
     if not os.path.exists(ENV_PATH):
         report(FAIL, "No .env file in the repository folder.",
-               "Copy .env.example to .env, then fill in ANTHROPIC_API_KEY (and ZEP_API_KEY for graphs and reports).")
+               "Copy .env.example to .env and fill in a key: Groq (free) or Claude, plus ZEP_API_KEY. See START_HERE.md.")
         return finish()
     report(OK, f".env found ({ENV_PATH})")
 
     from app.config import Config  # loads .env
 
+    if Config.LLM_PROVIDER == "openai":
+        check_openai_compatible(Config)
+        check_zep(Config)
+        return finish()
     if Config.LLM_PROVIDER != "anthropic":
-        report(FAIL, f"LLM_PROVIDER is '{Config.LLM_PROVIDER}', not 'anthropic'.", "Set LLM_PROVIDER=anthropic in .env.")
+        report(FAIL, f"LLM_PROVIDER is '{Config.LLM_PROVIDER}'.", "Set LLM_PROVIDER=anthropic (Claude) or openai (Groq, free) in .env.")
         return finish()
     report(OK, "LLM_PROVIDER=anthropic")
 
@@ -97,10 +102,50 @@ def main():
             report(FAIL, f"Anthropic returned {error.status_code}: {error.message}")
             break
 
+    check_zep(Config)
+    return finish()
+
+
+def check_openai_compatible(Config):
+    """LLM_PROVIDER=openai: Groq (free) or any OpenAI-compatible API."""
+    report(OK, f"LLM_PROVIDER=openai, {Config.LLM_BASE_URL}, model {Config.LLM_MODEL_NAME}")
+    if placeholder(Config.LLM_API_KEY or ""):
+        report(FAIL, "LLM_API_KEY is missing or still the example value.",
+               "Free key: console.groq.com > API Keys > Create API Key (starts with gsk_); paste it into .env.")
+        return
+    if "groq.com" in (Config.LLM_BASE_URL or ""):
+        report(WARN, "Groq free tier: about one full simulation a day, and never send client documents through it.")
+    from openai import OpenAI, APIConnectionError, APIStatusError, AuthenticationError, RateLimitError
+
+    client = OpenAI(api_key=Config.LLM_API_KEY, base_url=Config.LLM_BASE_URL, max_retries=1)
+    tool = {"type": "function", "function": {"name": "like_post", "description": "Like a post",
+            "parameters": {"type": "object", "properties": {"post_id": {"type": "integer"}}, "required": ["post_id"]}}}
+    try:
+        response = client.chat.completions.create(
+            model=Config.LLM_MODEL_NAME, tools=[tool],
+            messages=[{"role": "user", "content": "Post 7 is great. Like it using the tool."}],
+        )
+        calls = response.choices[0].message.tool_calls or []
+        if calls:
+            report(OK, f"Model answered and used a tool ({calls[0].function.name}): simulations will work")
+        else:
+            report(WARN, "Model answered but did not use the tool; agents may act less often.")
+    except AuthenticationError:
+        report(FAIL, "The API rejected the key.", "Create a new key and paste it into .env again.")
+    except RateLimitError as error:
+        report(FAIL, f"Rate limit reached: {str(error)[:160]}", "Free tiers reset daily; try again later.")
+    except APIConnectionError:
+        report(FAIL, f"Could not reach {Config.LLM_BASE_URL}.", "Check your internet connection.")
+    except APIStatusError as error:
+        report(FAIL, f"The API returned {error.status_code}: {str(error)[:160]}",
+               "Check LLM_MODEL_NAME is a model your provider offers (Groq: openai/gpt-oss-20b).")
+
+
+def check_zep(Config):
     zep = Config.ZEP_API_KEY or ""
     if placeholder(zep):
         report(WARN, "No ZEP_API_KEY: simulations and the God View work, but building graphs from documents and "
-                     "generating reports need Zep.", "Free key at app.getzep.com; put it in .env as ZEP_API_KEY.")
+                     "generating reports need Zep.", "Free key: app.getzep.com > Project Settings > Project Keys > Add Key (usually starts with zpk_); put it in .env as ZEP_API_KEY.")
     else:
         try:
             from zep_cloud.client import Zep
@@ -109,9 +154,7 @@ def main():
             report(OK, "Zep key works")
         except Exception as error:  # report any Zep failure in plain words
             report(FAIL, f"Zep rejected the key or could not be reached: {str(error)[:120]}",
-                   "Check ZEP_API_KEY at app.getzep.com.")
-
-    return finish()
+                   "Check ZEP_API_KEY at app.getzep.com (Project Settings > Project Keys).")
 
 
 def finish():
