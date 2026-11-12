@@ -1038,6 +1038,46 @@ def create_model(config: Dict[str, Any], use_boost: bool = False):
     return _create_openai_model(config, use_boost)
 
 
+def _complete_tool_schemas(tools):
+    """
+    Give every tool's parameters a "properties" object.
+
+    OASIS declares no-argument actions (do_nothing, trend) as
+    {"properties": {}, "required": [], ...}. Strict OpenAI-compatible
+    providers such as Groq treat the empty properties as missing and reject
+    the empty "required" list, which makes every agent call fail. An empty
+    "required" list means nothing, so it is dropped.
+    """
+    if not tools:
+        return tools
+    import copy
+
+    fixed = []
+    for tool in tools:
+        tool = copy.deepcopy(tool)
+        params = (tool.get("function") or {}).get("parameters")
+        if isinstance(params, dict):
+            params.setdefault("properties", {})
+            if not params.get("required"):
+                params.pop("required", None)
+        fixed.append(tool)
+    return fixed
+
+
+def _with_complete_tool_schemas(model):
+    """Wrap a camel model so every request sends completed tool schemas."""
+    run, arun = model._run, model._arun
+
+    def _run(messages, response_format=None, tools=None):
+        return run(messages, response_format, _complete_tool_schemas(tools))
+
+    async def _arun(messages, response_format=None, tools=None):
+        return await arun(messages, response_format, _complete_tool_schemas(tools))
+
+    model._run, model._arun = _run, _arun
+    return model
+
+
 def _create_openai_model(config: Dict[str, Any], use_boost: bool = False):
     """
     创建LLM模型
@@ -1088,10 +1128,10 @@ def _create_openai_model(config: Dict[str, Any], use_boost: bool = False):
     
     print(f"{config_label} model={llm_model}, base_url={llm_base_url[:40] if llm_base_url else '默认'}...")
     
-    return ModelFactory.create(
+    return _with_complete_tool_schemas(ModelFactory.create(
         model_platform=ModelPlatformType.OPENAI,
         model_type=llm_model,
-    )
+    ))
 
 
 def get_active_agents_for_round(
