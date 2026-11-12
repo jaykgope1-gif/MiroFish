@@ -2,7 +2,10 @@
 A ready-to-run simulation: the Gauteng tender market reacting to TenderFind
 SA's R1,500 Bid Check. 16 agents, no Zep needed (no document upload).
 
-    python scripts/god_demo/make_tenderfind.py [simulation_id]
+    python scripts/god_demo/make_tenderfind.py [simulation_id] [--start] [--rounds N]
+
+--start also starts the simulation (12 rounds by default) on a MiroFish
+backend already running at http://127.0.0.1:5001 (npm run dev).
 """
 import os, sys
 backend = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -13,7 +16,13 @@ from app.services.simulation_config_generator import (SimulationParameters, Agen
     TimeSimulationConfig, EventConfig, PlatformConfig)
 from app.services.simulation_manager import SimulationManager, SimulationState, SimulationStatus
 
-SIM = sys.argv[1] if len(sys.argv) > 1 else "sim_tenderfind_live"
+import argparse
+_args = argparse.ArgumentParser(description="Write (and optionally start) the TenderFind market simulation.")
+_args.add_argument("simulation_id", nargs="?", default="sim_tenderfind_live")
+_args.add_argument("--start", action="store_true", help="start it on the running backend")
+_args.add_argument("--rounds", type=int, default=12)
+ARGS = _args.parse_args()
+SIM = ARGS.simulation_id
 # name, type, stance on the Bid Check, influence, who they are
 PEOPLE = [
  ("Jay Kgope (TenderFind SA)", "Founder", "supportive", 2.0, "Runs TenderFind SA in Pretoria. Launched the R1,500 24-hour AI Bid Check. Explains plainly, never promises wins, answers questions on WhatsApp."),
@@ -63,3 +72,19 @@ SimulationManager()._save_simulation_state(SimulationState(simulation_id=SIM, pr
     status=SimulationStatus.READY, entities_count=len(PEOPLE), profiles_count=len(PEOPLE),
     entity_types=sorted({p[1] for p in PEOPLE}), profiles_generated=True, config_generated=True))
 print(SIM, "ready with", len(PEOPLE), "agents")
+
+if ARGS.start:
+    import json as _json
+    import urllib.request
+    request = urllib.request.Request(
+        "http://127.0.0.1:5001/api/simulation/start", method="POST",
+        data=_json.dumps({"simulation_id": SIM, "platform": "parallel", "max_rounds": ARGS.rounds, "force": True}).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=120) as response:
+            result = _json.loads(response.read())
+        print("Started:", result["data"]["runner_status"], f"- watch it at http://localhost:3000/god/{SIM}")
+    except Exception as error:
+        sys.exit(f"Could not start it ({error}). Is MiroFish running? Start it with `npm run dev` first.")
