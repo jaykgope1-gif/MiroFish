@@ -7,7 +7,17 @@ gracefully adapting request parameters for GPT-5 family models.
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
+
+
+def reasoning_effort() -> Optional[str]:
+    """LLM_REASONING_EFFORT (low/medium/high), for reasoning models such as
+    Groq's openai/gpt-oss-*. Their thinking counts against the output limit,
+    so a long JSON answer (the ontology) can come back empty; "low" leaves
+    room for the answer. Unset: not sent, so other providers are unaffected."""
+    value = (os.environ.get("LLM_REASONING_EFFORT") or "").strip().lower()
+    return value if value in {"low", "medium", "high"} else None
 
 
 def is_gpt5_family(model: Optional[str]) -> bool:
@@ -64,6 +74,10 @@ def create_chat_completion(
             kwargs["max_completion_tokens"] = max_tokens
         else:
             kwargs["max_tokens"] = max_tokens
+
+    effort = reasoning_effort()
+    if effort is not None:
+        kwargs["extra_body"] = {"reasoning_effort": effort}
 
     return client.chat.completions.create(**kwargs)
 
