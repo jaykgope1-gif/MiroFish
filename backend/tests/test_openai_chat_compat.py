@@ -121,3 +121,19 @@ def test_extracts_text_from_supported_content_shapes():
 
     assert extract_chat_completion_text(response) == "first second third"
     assert extract_chat_completion_text(SimpleNamespace(choices=[])) == ""
+
+
+def test_reasoning_effort_is_sent_only_when_configured(monkeypatch):
+    recorder = CompletionRecorder()
+    monkeypatch.delenv("LLM_REASONING_EFFORT", raising=False)
+    create_chat_completion(client_for(recorder), model="openai/gpt-oss-20b", messages=[])
+    assert "extra_body" not in recorder.calls[-1]
+
+    monkeypatch.setenv("LLM_REASONING_EFFORT", "Low")
+    create_chat_completion(client_for(recorder), model="openai/gpt-oss-20b", messages=[], max_tokens=4096)
+    assert recorder.calls[-1]["extra_body"] == {"reasoning_effort": "low"}
+    assert recorder.calls[-1]["max_tokens"] == 4096
+
+    monkeypatch.setenv("LLM_REASONING_EFFORT", "extreme")
+    create_chat_completion(client_for(recorder), model="openai/gpt-oss-20b", messages=[])
+    assert "extra_body" not in recorder.calls[-1]
