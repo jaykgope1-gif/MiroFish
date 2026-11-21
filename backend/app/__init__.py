@@ -73,9 +73,66 @@ def create_app(config_class=Config):
     @app.route('/health')
     def health():
         return {'status': 'ok', 'service': 'MiroFish Backend'}
+
+    _add_password_gate(app)
+    _serve_frontend(app)
     
     if should_log_startup:
         logger.info("MiroFish Backend 启动完成")
     
     return app
 
+
+
+def _add_password_gate(app):
+    """
+    With APP_PASSWORD set, every page and API call needs that password
+    (HTTP Basic auth, any user name). For public deployments: without it,
+    anyone with the link could run simulations on your API key.
+    """
+    import hmac
+    import os
+
+    from flask import Response, request
+
+    password = os.environ.get("APP_PASSWORD", "")
+    if not password:
+        return
+
+    @app.before_request
+    def require_password():
+        if request.path == "/health":
+            return None
+        auth = request.authorization
+        if auth and hmac.compare_digest((auth.password or "").encode(), password.encode()):
+            return None
+        return Response(
+            "MiroFish is password protected.", 401,
+            {"WWW-Authenticate": 'Basic realm="MiroFish", charset="UTF-8"'},
+        )
+
+
+def _serve_frontend(app):
+    """
+    With FRONTEND_DIST set to the built frontend (frontend/dist), serve the
+    website from this server too, so one port carries site and API. The
+    frontend must be built with VITE_API_BASE_URL=/ for same-origin calls.
+    """
+    import os
+
+    from flask import abort, send_from_directory
+
+    dist = os.environ.get("FRONTEND_DIST", "")
+    if not dist or not os.path.isfile(os.path.join(dist, "index.html")):
+        return
+    dist = os.path.abspath(dist)
+
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def frontend(path):
+        if path.startswith("api/"):
+            abort(404)
+        if path and os.path.isfile(os.path.join(dist, path)):
+            return send_from_directory(dist, path)
+        # Client-side routes (/god/..., /simulation/...) all load the app.
+        return send_from_directory(dist, "index.html")
